@@ -60,6 +60,18 @@ ARTIFACT_TO_DOCUMENT_KIND = {
     "notebook_overview": "notebook_overview",
 }
 
+SENSITIVE_KEY_FRAGMENTS = (
+    "auth",
+    "authorization",
+    "bearer",
+    "cookie",
+    "csrf",
+    "password",
+    "secret",
+    "session",
+    "token",
+)
+
 
 def normalize_notebook_bundle(raw_bundle: Mapping[str, Any], synced_at: str) -> NormalizedNotebookSnapshot:
     notebook, notebook_context = _normalize_notebook(raw_bundle, synced_at)
@@ -358,6 +370,8 @@ def _metadata_from_mapping(mapping: Mapping[str, Any], excluded_keys: set[str]) 
     for key in sorted(mapping):
         if key in excluded_keys:
             continue
+        if _looks_sensitive(key):
+            continue
         normalized = _metadata_value(mapping[key])
         if normalized is not _SKIP:
             metadata[key] = normalized
@@ -367,9 +381,11 @@ def _metadata_from_mapping(mapping: Mapping[str, Any], excluded_keys: set[str]) 
 def _compact_details(mapping: Mapping[str, Any]) -> dict[str, Any]:
     details = {}
     for key in sorted(mapping):
-        value = mapping[key]
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            details[key] = value
+        if _looks_sensitive(key):
+            continue
+        normalized = _metadata_value(mapping[key])
+        if normalized is not _SKIP:
+            details[key] = normalized
     return details
 
 
@@ -383,8 +399,14 @@ def _metadata_value(value: Any) -> Any:
         return {
             nested_key: normalized
             for nested_key in sorted(value)
+            if not _looks_sensitive(nested_key)
             if (normalized := _metadata_value(value[nested_key])) is not _SKIP
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [normalized for item in value if (normalized := _metadata_value(item)) is not _SKIP]
     return _SKIP
+
+
+def _looks_sensitive(key: str) -> bool:
+    lowered = key.lower()
+    return any(fragment in lowered for fragment in SENSITIVE_KEY_FRAGMENTS)
