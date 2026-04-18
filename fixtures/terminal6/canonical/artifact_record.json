@@ -1,0 +1,15 @@
+{
+  "id": "nlm:artifact:abc123:briefing_doc:art456",
+  "notebook_id": "nlm:notebook:abc123",
+  "origin": "notebooklm",
+  "artifact_kind": "briefing_doc",
+  "raw_id": "art456",
+  "derived_key": null,
+  "title": "Briefing document",
+  "url": "notebooklm://notebook/abc123/artifact/briefing_doc/art456",
+  "text": "Full artifact text.",
+  "mime_type": "text/markdown",
+  "metadata": {
+    "source_count": 3
+  }
+}

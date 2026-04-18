@@ -1,0 +1,14 @@
+{
+  "id": "nlm:document:abc123:source_summary:src789",
+  "notebook_id": "nlm:notebook:abc123",
+  "origin_type": "source",
+  "origin_id": "nlm:source:abc123:src789",
+  "document_kind": "source_summary",
+  "title": "Example paper",
+  "text": "NotebookLM-generated source summary.",
+  "url": "https://example.com/paper",
+  "content_sha256": "5f8e8d3f5c6a0b7d62c55883f0b56df2e15d8978cfe2a6b9cb9f4ed4cf9d3e3b",
+  "metadata": {
+    "source_type": "web"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "case_id": "fetch-not-found",
+  "scenario": "A caller requests a canonical document ID that is not present in the local store.",
+  "surface": "public fetch tool",
+  "expected_classification": "not_found",
+  "symptoms": [
+    "The document ID is syntactically valid but missing from local persistence.",
+    "The MCP layer must return a clear not-found error without leaking internals."
+  ],
+  "redacted_observations": {
+    "requested_document_id": "nlm:document:abc123:source_summary:missing"
+  },
+  "operator_action": "Confirm whether sync populated the document; if not, re-run sync or investigate the missing origin record.",
+  "status": "documented"
+}

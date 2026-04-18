@@ -1,0 +1,15 @@
+{
+  "id": "nlm:source:abc123:src789",
+  "notebook_id": "nlm:notebook:abc123",
+  "origin": "notebooklm",
+  "raw_id": "src789",
+  "derived_key": null,
+  "title": "Example paper",
+  "url": "https://example.com/paper",
+  "source_type": "web",
+  "summary_text": "NotebookLM-generated source summary.",
+  "created_at": null,
+  "metadata": {
+    "author": null
+  }
+}

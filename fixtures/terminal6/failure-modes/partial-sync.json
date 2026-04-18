@@ -1,0 +1,16 @@
+{
+  "case_id": "partial-sync",
+  "scenario": "A sync run persists some canonical records successfully, then fails before the full notebook completes.",
+  "surface": "sync and persistence",
+  "expected_classification": "partial_sync_failure",
+  "symptoms": [
+    "The sync run reports mixed success and failure outcomes.",
+    "Some documents are available locally, but the notebook snapshot is incomplete."
+  ],
+  "redacted_observations": {
+    "sync_run_id": "sync-run-20260418T200000Z",
+    "failed_entity_reference": "nlm:source:abc123:src999"
+  },
+  "operator_action": "Inspect the recorded sync status, correct the upstream failure, and re-run sync idempotently.",
+  "status": "documented"
+}

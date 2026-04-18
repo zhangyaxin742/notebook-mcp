@@ -1,0 +1,16 @@
+{
+  "case_id": "auth-expired",
+  "scenario": "NotebookLM session state is missing or expired before a sync starts.",
+  "surface": "connector/session validation",
+  "expected_classification": "auth_expired",
+  "symptoms": [
+    "A login redirect appears where authenticated JSON was expected.",
+    "The session validation step fails before notebook enumeration."
+  ],
+  "redacted_observations": {
+    "set_cookie_header": "<redacted-header>",
+    "browser_profile_path": "<redacted-path>"
+  },
+  "operator_action": "Re-run the login bootstrap or doctor flow, validate the session, and retry the sync.",
+  "status": "documented"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "nlm:notebook:abc123",
+  "origin": "notebooklm",
+  "raw_id": "abc123",
+  "derived_key": null,
+  "title": "AI Safety Research",
+  "url": "https://notebooklm.google.com/notebook/abc123",
+  "source_count": 3,
+  "artifact_count": 2,
+  "last_synced_at": "2026-04-18T20:00:00Z",
+  "metadata": {
+    "share_mode": "private"
+  }
+}

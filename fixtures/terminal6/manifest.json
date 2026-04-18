@@ -1,0 +1,18 @@
+{
+  "owner": "terminal-6",
+  "purpose": "Scrubbed validation fixtures for baseline tests and operator documentation. These files are examples, not shared runtime contracts.",
+  "canonical_examples": [
+    "canonical/notebook_record.json",
+    "canonical/source_record.json",
+    "canonical/artifact_record.json",
+    "canonical/document_record.json",
+    "canonical/chunk_record.json"
+  ],
+  "failure_mode_cases": [
+    "failure-modes/auth-expired.json",
+    "failure-modes/endpoint-drift.json",
+    "failure-modes/unsupported-shape.json",
+    "failure-modes/partial-sync.json",
+    "failure-modes/fetch-not-found.json"
+  ]
+}

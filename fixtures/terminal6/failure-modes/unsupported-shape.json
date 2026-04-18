@@ -1,0 +1,15 @@
+{
+  "case_id": "unsupported-shape",
+  "scenario": "NotebookLM returns data that is parseable JSON but does not match the connector's supported shape.",
+  "surface": "raw connector normalization boundary",
+  "expected_classification": "unsupported_shape",
+  "symptoms": [
+    "A required collection is present but contains objects without stable identifiers.",
+    "A field switches type and breaks downstream assumptions."
+  ],
+  "redacted_observations": {
+    "response_excerpt": "<redacted-response-snippet>"
+  },
+  "operator_action": "Fail closed, preserve a scrubbed sample, and update parsing logic only after validating the new shape against the contracts.",
+  "status": "documented"
+}

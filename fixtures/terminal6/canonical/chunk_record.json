@@ -1,0 +1,14 @@
+{
+  "id": "nlm:chunk:nlm:document:abc123:source_summary:src789:0",
+  "document_id": "nlm:document:abc123:source_summary:src789",
+  "notebook_id": "nlm:notebook:abc123",
+  "chunk_index": 0,
+  "text": "NotebookLM-generated source summary.",
+  "char_start": 0,
+  "char_end": 37,
+  "token_count_estimate": 9,
+  "content_sha256": "e0b153045b90d56fb24c4c6c8b4c7d7244e0eb5e8f0d80d7efb0fd897f0b3bc7",
+  "metadata": {
+    "document_kind": "source_summary"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case_id": "endpoint-drift",
+  "scenario": "An undocumented NotebookLM endpoint or response shape changes after a product update.",
+  "surface": "internal HTTP connector",
+  "expected_classification": "endpoint_drift",
+  "symptoms": [
+    "A previously valid request starts returning an unexpected status code.",
+    "A known field disappears or moves in the response envelope."
+  ],
+  "redacted_observations": {
+    "request_url": "<redacted-endpoint>",
+    "response_excerpt": "<redacted-response-snippet>"
+  },
+  "operator_action": "Capture a scrubbed repro, compare it with the last known-good fixture, and adjust the connector only after confirming the drift.",
+  "status": "documented"
+}
