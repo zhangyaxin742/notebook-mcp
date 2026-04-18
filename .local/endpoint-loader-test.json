@@ -1,0 +1,10 @@
+﻿{
+  "base_url": "https://notebooklm.google.com",
+  "endpoints": {
+    "list_notebooks": {
+      "path": "api/notebooks",
+      "method": "GET",
+      "root_keys": ["notebooks"]
+    }
+  }
+}
