@@ -184,6 +184,61 @@ def tool_result_text(payload: Any) -> JSONDict:
     }
 
 
+def _coerce_document_summary(document: Mapping[str, Any]) -> JSONDict:
+    return {
+        "id": document["id"],
+        "title": document["title"],
+        "url": document["url"],
+    }
+
+
+def _coerce_document_listing(document: Mapping[str, Any]) -> JSONDict:
+    return {
+        "id": document["id"],
+        "title": document["title"],
+        "url": document["url"],
+        "document_kind": document["document_kind"],
+    }
+
+
+def _coerce_notebook_summary(notebook: Mapping[str, Any]) -> JSONDict:
+    return {
+        "id": notebook["id"],
+        "title": notebook["title"],
+        "url": notebook["url"],
+        "source_count": notebook.get("source_count"),
+        "artifact_count": notebook.get("artifact_count"),
+    }
+
+
+def _coerce_fetch_payload(document: Mapping[str, Any]) -> JSONDict:
+    metadata = dict(document.get("metadata", {}))
+
+    for required_field in ("origin_type", "origin_id", "document_kind", "notebook_id"):
+        if required_field in document and required_field not in metadata:
+            metadata[required_field] = document[required_field]
+
+    missing = [
+        field
+        for field in ("origin_type", "origin_id", "document_kind", "notebook_id")
+        if field not in metadata
+    ]
+    if missing:
+        raise ToolValidationError(
+            "Fetch result is missing required metadata field(s): "
+            + ", ".join(sorted(missing))
+            + "."
+        )
+
+    return {
+        "id": document["id"],
+        "title": document["title"],
+        "text": document["text"],
+        "url": document["url"],
+        "metadata": metadata,
+    }
+
+
 def _validate_field(field_name: str, value: Any, schema: Mapping[str, Any]) -> None:
     field_type = schema.get("type")
     if field_type == "string":
@@ -213,24 +268,25 @@ def _validate_field(field_name: str, value: Any, schema: Mapping[str, Any]) -> N
 
 
 def _handle_search(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
-    return tool_result_text({"results": list(backend.search(arguments["query"]))})
-
-
-def _handle_fetch(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
-    document = dict(backend.fetch(arguments["id"]))
     return tool_result_text(
         {
-            "id": document["id"],
-            "title": document["title"],
-            "text": document["text"],
-            "url": document["url"],
-            "metadata": dict(document["metadata"]),
+            "results": [
+                _coerce_document_summary(document)
+                for document in backend.search(arguments["query"])
+            ]
         }
     )
 
 
+def _handle_fetch(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
+    document = backend.fetch(arguments["id"])
+    return tool_result_text(_coerce_fetch_payload(document))
+
+
 def _handle_list_notebooks(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
-    return tool_result_text(list(backend.list_notebooks()))
+    return tool_result_text(
+        [_coerce_notebook_summary(notebook) for notebook in backend.list_notebooks()]
+    )
 
 
 def _handle_get_notebook(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
@@ -242,9 +298,9 @@ def _handle_list_notebook_documents(
 ) -> JSONDict:
     return tool_result_text(
         list(
-            backend.list_notebook_documents(
-                notebook_id=arguments["notebook_id"],
-                document_kind=arguments.get("document_kind"),
+            _coerce_document_listing(document)
+            for document in backend.list_notebook_documents(
+                notebook_id=arguments["notebook_id"], document_kind=arguments.get("document_kind")
             )
         )
     )
@@ -253,11 +309,9 @@ def _handle_list_notebook_documents(
 def _handle_search_notebook(backend: ResearchBackend, arguments: JSONDict) -> JSONDict:
     return tool_result_text(
         list(
-            backend.search_notebook(
-                notebook_id=arguments["notebook_id"],
-                query=arguments["query"],
-                document_kind=arguments.get("document_kind"),
-                limit=arguments.get("limit", 10),
+            _coerce_document_listing(document)
+            for document in backend.search_notebook(
+                notebook_id=arguments["notebook_id"], query=arguments["query"], document_kind=arguments.get("document_kind"), limit=arguments.get("limit", 10)
             )
         )
     )
