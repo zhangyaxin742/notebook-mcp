@@ -16,9 +16,11 @@ from .storage import SessionStore
 class DoctorReport:
     session_path: str
     browser_profile_dir: str
+    session_storage: dict[str, Any]
     session_validation: dict[str, Any]
     playwright_available: bool
     connector_probe: dict[str, Any] | None = None
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -91,7 +93,11 @@ class NotebookLMAuthManager:
         probe: Callable[[], Any] | None = None,
     ) -> DoctorReport:
         validation = self.validate_session()
+        storage_info = self.session_store.describe_storage()
         connector_probe: dict[str, Any] | None = None
+        warnings: list[str] = []
+        if storage_info.get("warning"):
+            warnings.append(str(storage_info["warning"]))
         if probe is not None:
             try:
                 probe_result = probe()
@@ -109,7 +115,9 @@ class NotebookLMAuthManager:
         return DoctorReport(
             session_path=str(self.paths.session_file),
             browser_profile_dir=str(self.paths.browser_profile_dir),
+            session_storage=scrub_payload(storage_info),
             session_validation=scrub_payload(validation.__dict__),
             playwright_available=self.bootstrapper.is_available(),
             connector_probe=connector_probe,
+            warnings=tuple(warnings),
         )

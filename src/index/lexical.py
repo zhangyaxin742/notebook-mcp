@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import sqlite3
 import re
+import sqlite3
 from dataclasses import dataclass
 
-from retrieval.models import CanonicalChunk
+from src.retrieval.models import CanonicalChunk
 
 
 @dataclass(frozen=True)
@@ -124,4 +124,3 @@ def _build_match_query(query: str) -> str:
 
 def _normalize_rank(rank: float) -> float:
     return 1.0 / (1.0 + abs(rank))
-

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+from hmac import compare_digest
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,13 +28,31 @@ class ServerConfig:
     port: int = 8000
     transport: str = "streamable-http"
     endpoint_path: str = "/mcp"
+    auth_mode: str = "local-dev"
+    bearer_token: str | None = None
+    allowed_origins: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "ServerConfig":
         host = os.getenv("NOTEBOOK_MCP_HOST", "127.0.0.1")
         port = int(os.getenv("NOTEBOOK_MCP_PORT", "8000"))
         transport = os.getenv("NOTEBOOK_MCP_TRANSPORT", "streamable-http")
-        return cls(host=host, port=port, transport=transport)
+        auth_mode = os.getenv("NOTEBOOK_MCP_AUTH_MODE", "local-dev")
+        bearer_token = os.getenv("NOTEBOOK_MCP_BEARER_TOKEN")
+        allowed_origins_raw = os.getenv("NOTEBOOK_MCP_ALLOWED_ORIGINS", "")
+        allowed_origins = tuple(
+            origin.strip()
+            for origin in allowed_origins_raw.split(",")
+            if origin.strip()
+        )
+        return cls(
+            host=host,
+            port=port,
+            transport=transport,
+            auth_mode=auth_mode,
+            bearer_token=bearer_token,
+            allowed_origins=allowed_origins,
+        )
 
 
 class McpHttpServer(ThreadingHTTPServer):
@@ -56,7 +76,11 @@ class McpRequestHandler(BaseHTTPRequestHandler):
         if not self._is_endpoint_request():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if not self._validate_accept_header(required={"text/event-stream"}):
+            return
         if not self._validate_origin():
+            return
+        if not self._authorize_request():
             return
 
         session = self._resolve_session(required=False)
@@ -81,6 +105,8 @@ class McpRequestHandler(BaseHTTPRequestHandler):
             return
         if not self._validate_origin():
             return
+        if not self._authorize_request():
+            return
 
         session = self._resolve_session(required=True)
         if session is None:
@@ -95,7 +121,13 @@ class McpRequestHandler(BaseHTTPRequestHandler):
         if not self._is_endpoint_request():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if not self._validate_accept_header(
+            required={"application/json", "text/event-stream"}
+        ):
+            return
         if not self._validate_origin():
+            return
+        if not self._authorize_request():
             return
 
         try:
@@ -107,34 +139,14 @@ class McpRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if isinstance(body, list):
-            if not body:
-                self._send_json(
-                    HTTPStatus.BAD_REQUEST,
-                    self.server.protocol_server.build_transport_error(
-                        -32600, "Invalid Request"
-                    ),
-                )
-                return
-            messages = body
-        elif isinstance(body, Mapping):
+        if isinstance(body, Mapping):
             messages = [body]
         else:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                self.server.protocol_server.build_transport_error(-32600, "Invalid Request"),
-            )
-            return
-
-        if any(
-            isinstance(message, Mapping) and message.get("method") == "initialize"
-            for message in messages
-        ) and len(messages) > 1:
-            self._send_json(
-                HTTPStatus.BAD_REQUEST,
                 self.server.protocol_server.build_transport_error(
                     -32600,
-                    "Initialize must be sent as a single request.",
+                    "Streamable HTTP expects a single JSON-RPC object per POST.",
                 ),
             )
             return
@@ -182,11 +194,7 @@ class McpRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        response_body: JSONDict | list[JSONDict]
-        if isinstance(body, list):
-            response_body = responses
-        else:
-            response_body = responses[0]
+        response_body = responses[0]
 
         headers: dict[str, str] = {}
         if created_session is not None:
@@ -284,20 +292,55 @@ class McpRequestHandler(BaseHTTPRequestHandler):
 
         return True
 
+    def _validate_accept_header(self, required: set[str]) -> bool:
+        header_value = self.headers.get("Accept")
+        if header_value is None:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                self.server.protocol_server.build_transport_error(
+                    -32000,
+                    "Missing Accept header.",
+                ),
+            )
+            return False
+
+        accepted_values = {
+            part.split(";", 1)[0].strip().lower()
+            for part in header_value.split(",")
+            if part.strip()
+        }
+        missing = sorted(value for value in required if value not in accepted_values)
+        if missing:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                self.server.protocol_server.build_transport_error(
+                    -32000,
+                    "Accept header must include: " + ", ".join(missing),
+                ),
+            )
+            return False
+        return True
+
     def _validate_origin(self) -> bool:
         origin = self.headers.get("Origin")
         if origin is None:
             return True
 
         parsed = urlparse(origin)
-        origin_host = (parsed.hostname or "").lower()
-        allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+        normalized_origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        if self.server.config.auth_mode == "local-dev":
+            origin_host = (parsed.hostname or "").lower()
+            allowed_hosts = {"127.0.0.1", "localhost", "::1"}
+            configured_host = self.server.config.host.lower()
+            if configured_host not in {"0.0.0.0", "::"}:
+                allowed_hosts.add(configured_host)
+            is_allowed = origin_host in allowed_hosts
+        else:
+            is_allowed = normalized_origin in {
+                value.rstrip("/") for value in self.server.config.allowed_origins
+            }
 
-        configured_host = self.server.config.host.lower()
-        if configured_host not in {"0.0.0.0", "::"}:
-            allowed_hosts.add(configured_host)
-
-        if origin_host not in allowed_hosts:
+        if not is_allowed:
             self._send_json(
                 HTTPStatus.FORBIDDEN,
                 self.server.protocol_server.build_transport_error(
@@ -308,6 +351,65 @@ class McpRequestHandler(BaseHTTPRequestHandler):
             return False
 
         return True
+
+    def _authorize_request(self) -> bool:
+        if self.server.config.auth_mode == "local-dev":
+            if self._is_loopback_client():
+                return True
+            self._send_json(
+                HTTPStatus.FORBIDDEN,
+                self.server.protocol_server.build_transport_error(
+                    -32000,
+                    "Local development mode only accepts loopback clients.",
+                ),
+            )
+            return False
+
+        if self.server.config.auth_mode != "bearer":
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                self.server.protocol_server.build_transport_error(
+                    -32000,
+                    f"Unsupported auth mode: {self.server.config.auth_mode}",
+                ),
+            )
+            return False
+
+        expected_token = self.server.config.bearer_token
+        if not expected_token:
+            self._send_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                self.server.protocol_server.build_transport_error(
+                    -32000,
+                    "Bearer auth mode requires a configured bearer token.",
+                ),
+            )
+            return False
+
+        header_value = self.headers.get("Authorization")
+        if not header_value or not header_value.startswith("Bearer "):
+            self._send_unauthorized("Missing bearer token.")
+            return False
+
+        presented_token = header_value[len("Bearer ") :]
+        if not compare_digest(presented_token, expected_token):
+            self._send_unauthorized("Invalid bearer token.")
+            return False
+
+        return True
+
+    def _is_loopback_client(self) -> bool:
+        try:
+            return ipaddress.ip_address(self.client_address[0]).is_loopback
+        except ValueError:
+            return False
+
+    def _send_unauthorized(self, message: str) -> None:
+        self._send_json(
+            HTTPStatus.UNAUTHORIZED,
+            self.server.protocol_server.build_transport_error(-32001, message),
+            headers={"WWW-Authenticate": 'Bearer realm="notebook-mcp"'},
+        )
 
     def _send_json(
         self,

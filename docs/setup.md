@@ -5,8 +5,8 @@ This guide is owned by Terminal 6 and documents the expected operator flow for a
 Current repository state on 2026-04-18:
 
 - shared contracts exist
-- Terminal 6 validation scaffolding exists
-- runtime login, sync, indexing, and serve entrypoints are still pending implementation in other owned paths
+- Terminal 6 validation scaffolding and runtime smoke tests exist
+- runtime code exists for auth/session handling, sync, retrieval, and MCP serving, but operator-facing workflows still need conservative validation before real deployment
 
 Because of that, this document distinguishes between:
 
@@ -33,10 +33,14 @@ This validates:
 - scrubbed fixtures are present and deterministic
 - committed fixtures do not contain obvious live secret material
 - setup and runbook docs cover the required flows and failure modes
+- sync persistence and failure recording paths
+- retrieval chunking and hybrid search behavior
+- MCP protocol and streamable HTTP transport behavior
+- import smoke across the major package surfaces
 
-## Expected Login Flow
+## Login Flow
 
-The login flow belongs to Terminal 2 and is not implemented in this repository snapshot yet.
+The login flow belongs to Terminal 2 and is implemented as a code surface, but it still requires operator validation against a real private NotebookLM account before it should be treated as deployment-ready.
 
 When it lands, the operator path should be:
 
@@ -50,9 +54,9 @@ Validation checkpoint:
 - a doctor-style command should distinguish expired auth from endpoint drift and unsupported response shape
 - no committed file should contain browser session state, cookie values, or bearer tokens
 
-## Expected Sync Flow
+## Sync Flow
 
-The sync flow belongs to Terminal 3 and is not implemented in this repository snapshot yet.
+The sync flow belongs to Terminal 3 and now has runtime coverage in the test suite.
 
 When it lands, the operator path should be:
 
@@ -67,9 +71,9 @@ Validation checkpoint:
 - provenance and canonical URLs should remain present in persisted records
 - a failed sync should produce an explicit status instead of hiding missing data
 
-## Expected Reindex Flow
+## Reindex Flow
 
-The reindex flow belongs to Terminal 4 and is not implemented in this repository snapshot yet.
+The reindex flow belongs to Terminal 4 and now has runtime coverage through retrieval and persisted-chunk tests.
 
 When it lands, the operator path should be:
 
@@ -82,9 +86,9 @@ Validation checkpoint:
 - document IDs returned by retrieval should always be canonical `DocumentRecord.id` values
 - chunking behavior should be deterministic for the same document content
 
-## Expected Serve Flow
+## Serve Flow
 
-The serve flow belongs to Terminal 5 and is not implemented in this repository snapshot yet.
+The serve flow belongs to Terminal 5 and now has runtime coverage through MCP protocol and streamable HTTP smoke tests.
 
 When it lands, the operator path should be:
 
@@ -100,6 +104,6 @@ Validation checkpoint:
 
 ## Known Setup Limitations
 
-- This repository does not yet define the final command names for login, sync, reindex, or serve.
-- Baseline validation is currently contract- and fixture-driven, not end-to-end runtime validation.
+- This repository does not yet define the final stable operator command names for login, sync, reindex, or serve.
+- Validation is broader than the initial fixture-only harness, but it is still not a substitute for real private-account dry runs.
 - NotebookLM is integrated through undocumented behavior, so operator expectations should assume drift risk and periodic maintenance.

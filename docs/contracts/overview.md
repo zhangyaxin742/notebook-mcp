@@ -18,7 +18,18 @@ The connector reads from NotebookLM.
 The sync layer converts raw NotebookLM entities into canonical local records.
 The persistence layer stores those canonical records deterministically.
 The retrieval layer searches only persisted canonical data.
-The MCP server exposes retrieval and document access tools to ChatGPT and Claude.
+The MCP server exposes retrieval and document access tools to ChatGPT and Claude over Streamable HTTP.
+
+Current runtime seam decisions:
+
+- the default MCP backend is the SQLite-backed local store and retrieval service
+- the server may also be started with a null backend or a small in-memory demo backend for smoke testing
+- the public transport is `streamable-http` only in v1
+- HTTP access supports two security modes:
+  - `local-dev`: loopback clients only
+  - `bearer`: explicit bearer token plus allowed-origin checks
+- NotebookLM endpoint configuration is loaded from a local JSON file under the auth runtime directory and auto-created with a default template when missing
+- NotebookLM session storage is local-only and uses Windows DPAPI when available, otherwise permission-hardened plaintext storage
 
 ## Required Data Flow
 
@@ -41,6 +52,7 @@ Live NotebookLM chat is not part of the default v1 path.
 - Provenance must be preserved back to the NotebookLM origin entity and source URL where available.
 - Local snapshots must be deterministic and diff-friendly.
 - Companion tools may be richer than ChatGPT `search` and `fetch`, but must remain read-only by default.
+- Local operator state under `.local/` is runtime data, not repository data, and must remain ignored.
 
 ## Contract Files
 

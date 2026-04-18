@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from uuid import uuid4
 
+from src.index import ChunkingPolicy
 from src.store import SnapshotWriter, SQLiteStore, StorePaths
 from src.store.models import NormalizedNotebookSnapshot, SyncFailure, SyncOutcome, SyncRunRecord, utc_now_iso
+from src.sync.chunks import generate_chunk_records
 from src.sync.normalize import normalize_notebook_bundle
 from src.sync.types import NotebookConnector
 
@@ -14,10 +17,12 @@ class NotebookSyncService:
         store: SQLiteStore | None = None,
         snapshot_writer: SnapshotWriter | None = None,
         paths: StorePaths | None = None,
+        chunking_policy: ChunkingPolicy | None = None,
     ) -> None:
         resolved_paths = paths or StorePaths.from_env()
         self._store = store or SQLiteStore(resolved_paths)
         self._snapshot_writer = snapshot_writer or SnapshotWriter(resolved_paths)
+        self._chunking_policy = chunking_policy
         self._store.initialize()
 
     def sync_notebook(self, connector: NotebookConnector, notebook_id: str) -> SyncOutcome:
@@ -34,8 +39,9 @@ class NotebookSyncService:
 
         try:
             raw_bundle = connector.fetch_notebook(notebook_id)
-            snapshot = normalize_notebook_bundle(raw_bundle, synced_at=started_at)
+            snapshot = self._with_chunks(normalize_notebook_bundle(raw_bundle, synced_at=started_at))
             self._store.replace_notebook_snapshot(snapshot)
+            self._persist_chunks(snapshot)
             completed = self._finalize_run(snapshot, run_id, started_at)
             self._snapshot_writer.write_snapshot(snapshot, completed)
             self._store.finalize_sync_run(completed, snapshot.failures)
@@ -75,3 +81,26 @@ class NotebookSyncService:
             error_count=failure_count,
             summary=f"Synced {len(snapshot.sources)} sources, {len(snapshot.artifacts)} artifacts, {len(snapshot.documents)} documents",
         )
+
+    def _with_chunks(self, snapshot: NormalizedNotebookSnapshot) -> NormalizedNotebookSnapshot:
+        chunks = generate_chunk_records(snapshot.documents, policy=self._chunking_policy)
+        return NormalizedNotebookSnapshot(
+            notebook=snapshot.notebook,
+            sources=snapshot.sources,
+            artifacts=snapshot.artifacts,
+            documents=snapshot.documents,
+            chunks=chunks,
+            failures=snapshot.failures,
+        )
+
+    def _persist_chunks(self, snapshot: NormalizedNotebookSnapshot) -> None:
+        chunks_by_document_id: dict[str, list] = defaultdict(list)
+        for chunk in snapshot.chunks:
+            chunks_by_document_id[chunk.document_id].append(chunk)
+
+        for document in snapshot.documents:
+            self._store.replace_document_chunks(
+                document.id,
+                document.notebook_id,
+                tuple(sorted(chunks_by_document_id.get(document.id, []), key=lambda item: (item.chunk_index, item.id))),
+            )

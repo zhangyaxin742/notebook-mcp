@@ -30,6 +30,20 @@ class Terminal6DocsTests(unittest.TestCase):
             with self.subTest(required_term=required_term):
                 self.assertIn(required_term, runbook_doc)
 
+    def test_production_readiness_checklist_distinguishes_modes(self) -> None:
+        readiness_doc = read_text("docs/setup-production-readiness.md")
+        for required_term in (
+            "prototype mode",
+            "real deployment mode",
+            "local-dev readiness",
+            "private self-hosted readiness",
+            "remote-exposed readiness",
+            "bearer",
+            "allowed origins",
+        ):
+            with self.subTest(required_term=required_term):
+                self.assertIn(required_term, readiness_doc)
+
     def test_status_file_is_present_and_factual(self) -> None:
         status_doc = read_text("docs/status/terminal-6.md")
         for required_term in ("current scope", "files owned", "current blocker", "last meaningful change"):

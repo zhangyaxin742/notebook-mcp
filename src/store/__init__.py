@@ -1,3 +1,5 @@
+from src.store.chunk_repository import SQLiteChunkRepository
+from src.store.document_repository import SQLiteDocumentRepository
 from src.store.models import (
     ArtifactRecord,
     ChunkRecord,
@@ -20,6 +22,8 @@ __all__ = [
     "NotebookRecord",
     "NormalizedNotebookSnapshot",
     "SnapshotWriter",
+    "SQLiteChunkRepository",
+    "SQLiteDocumentRepository",
     "SQLiteStore",
     "SourceRecord",
     "StorePaths",

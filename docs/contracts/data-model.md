@@ -291,16 +291,17 @@ Canonical disk layout under the data root:
 
 ```text
 <data_root>/
-  notebooks/
-    <notebook_key>/
-      manifest.json
-      sources/
-        <source_key>.json
-      artifacts/
-        <artifact_kind>/
-          <artifact_key>.json
-      documents/
-        <document_id_safe>.json
+  snapshots/
+    notebooks/
+      <notebook_key>/
+        manifest.json
+        sources/
+          <source_key>.json
+        artifacts/
+          <artifact_kind>/
+            <artifact_key>.json
+        documents/
+          <document_id_safe>.json
 ```
 
 Rules:

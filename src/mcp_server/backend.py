@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+
+from src.retrieval.models import CanonicalDocument, SearchResult
+from src.retrieval.service import RetrievalService
+from src.store.document_repository import SQLiteDocumentRepository
+from src.store.settings import StorePaths
+from src.store.sqlite_store import SQLiteStore
 
 
 JSONDict = dict[str, Any]
@@ -90,6 +98,287 @@ class NullResearchBackend:
             "status": "unconfigured",
             "notebook_id": notebook_id,
             "message": "No research backend is configured for the MCP server.",
+        }
+
+
+class SQLiteResearchBackend:
+    """Research backend backed by the canonical SQLite store and retrieval service."""
+
+    def __init__(self, *, paths: StorePaths | None = None) -> None:
+        self._paths = paths or StorePaths.from_env()
+        self._store = SQLiteStore(self._paths)
+        self._store.initialize()
+        self._repository = SQLiteDocumentRepository(store=self._store)
+
+    def search(self, query: str) -> Sequence[Mapping[str, Any]]:
+        retrieval = self._new_retrieval_service()
+        try:
+            retrieval.refresh()
+            return [self._search_result_payload(result) for result in retrieval.search(query)]
+        finally:
+            retrieval.close()
+
+    def fetch(self, document_id: str) -> Mapping[str, Any]:
+        document = self._repository.get_document(document_id)
+        if document is None:
+            raise NotFoundError(f"Document not found: {document_id}")
+        return self._document_payload(document)
+
+    def list_notebooks(self) -> Sequence[Mapping[str, Any]]:
+        rows = self._fetchall(
+            """
+            SELECT
+                id,
+                origin,
+                raw_id,
+                derived_key,
+                title,
+                url,
+                source_count,
+                artifact_count,
+                last_synced_at,
+                metadata_json
+            FROM notebooks
+            ORDER BY lower(title) ASC, id ASC
+            """
+        )
+        return [self._notebook_payload(row) for row in rows]
+
+    def get_notebook(self, notebook_id: str) -> Mapping[str, Any]:
+        row = self._fetchone(
+            """
+            SELECT
+                id,
+                origin,
+                raw_id,
+                derived_key,
+                title,
+                url,
+                source_count,
+                artifact_count,
+                last_synced_at,
+                metadata_json
+            FROM notebooks
+            WHERE id = ?
+            """,
+            (notebook_id,),
+        )
+        if row is None:
+            raise NotFoundError(f"Notebook not found: {notebook_id}")
+        return self._notebook_payload(row)
+
+    def list_notebook_documents(
+        self, notebook_id: str, document_kind: str | None = None
+    ) -> Sequence[Mapping[str, Any]]:
+        self._require_notebook(notebook_id)
+        return [
+            self._document_listing_payload(document)
+            for document in self._repository.iter_documents(
+                notebook_id=notebook_id,
+                document_kind=document_kind,
+            )
+        ]
+
+    def search_notebook(
+        self,
+        notebook_id: str,
+        query: str,
+        document_kind: str | None = None,
+        limit: int = 10,
+    ) -> Sequence[Mapping[str, Any]]:
+        self._require_notebook(notebook_id)
+        retrieval = self._new_retrieval_service()
+        try:
+            retrieval.refresh()
+            return [
+                self._document_listing_payload_from_result(result)
+                for result in retrieval.search_notebook(
+                    notebook_id,
+                    query,
+                    document_kind=document_kind,
+                    limit=limit,
+                )
+            ]
+        finally:
+            retrieval.close()
+
+    def get_sync_status(self, notebook_id: str | None = None) -> Mapping[str, Any]:
+        if notebook_id is None:
+            latest_run = self._fetchone(
+                """
+                SELECT
+                    id,
+                    notebook_id,
+                    started_at,
+                    completed_at,
+                    status,
+                    source_count,
+                    artifact_count,
+                    document_count,
+                    chunk_count,
+                    error_count,
+                    summary
+                FROM sync_runs
+                ORDER BY COALESCE(completed_at, started_at) DESC, started_at DESC, id DESC
+                LIMIT 1
+                """
+            )
+            notebook_count = self._count("SELECT COUNT(*) FROM notebooks")
+            document_count = self._count("SELECT COUNT(*) FROM documents")
+            status = "ready" if notebook_count else "empty"
+            payload: JSONDict = {
+                "status": status,
+                "notebook_count": notebook_count,
+                "document_count": document_count,
+            }
+            if latest_run is not None:
+                payload["latest_run"] = self._sync_run_payload(latest_run)
+            return payload
+
+        notebook = self.get_notebook(notebook_id)
+        latest_run = self._fetchone(
+            """
+            SELECT
+                id,
+                notebook_id,
+                started_at,
+                completed_at,
+                status,
+                source_count,
+                artifact_count,
+                document_count,
+                chunk_count,
+                error_count,
+                summary
+            FROM sync_runs
+            WHERE notebook_id = ?
+            ORDER BY COALESCE(completed_at, started_at) DESC, started_at DESC, id DESC
+            LIMIT 1
+            """,
+            (notebook_id,),
+        )
+        payload = {
+            "status": "never_synced" if latest_run is None else latest_run["status"],
+            "notebook_id": notebook_id,
+            "title": notebook["title"],
+            "last_synced_at": notebook.get("last_synced_at"),
+            "document_count": self._count(
+                "SELECT COUNT(*) FROM documents WHERE notebook_id = ?",
+                (notebook_id,),
+            ),
+        }
+        if latest_run is not None:
+            payload["latest_run"] = self._sync_run_payload(latest_run)
+        return payload
+
+    def close(self) -> None:
+        return
+
+    def _new_retrieval_service(self) -> RetrievalService:
+        return RetrievalService(self._repository)
+
+    def _require_notebook(self, notebook_id: str) -> None:
+        self.get_notebook(notebook_id)
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self._store.db_path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _fetchall(
+        self, query: str, parameters: tuple[Any, ...] = ()
+    ) -> list[sqlite3.Row]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(query, parameters).fetchall()
+        finally:
+            connection.close()
+        return list(rows)
+
+    def _fetchone(
+        self, query: str, parameters: tuple[Any, ...] = ()
+    ) -> sqlite3.Row | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(query, parameters).fetchone()
+        finally:
+            connection.close()
+        return row
+
+    def _count(self, query: str, parameters: tuple[Any, ...] = ()) -> int:
+        row = self._fetchone(query, parameters)
+        if row is None:
+            return 0
+        return int(row[0])
+
+    def _notebook_payload(self, row: sqlite3.Row) -> JSONDict:
+        return {
+            "id": row["id"],
+            "origin": row["origin"],
+            "raw_id": row["raw_id"],
+            "derived_key": row["derived_key"],
+            "title": row["title"],
+            "url": row["url"],
+            "source_count": row["source_count"],
+            "artifact_count": row["artifact_count"],
+            "last_synced_at": row["last_synced_at"],
+            "metadata": json.loads(row["metadata_json"]),
+        }
+
+    def _document_payload(self, document: CanonicalDocument) -> JSONDict:
+        metadata = dict(document.metadata)
+        metadata.setdefault("origin_type", document.origin_type)
+        metadata.setdefault("origin_id", document.origin_id)
+        metadata.setdefault("document_kind", document.document_kind)
+        metadata.setdefault("notebook_id", document.notebook_id)
+        return {
+            "id": document.id,
+            "title": document.title,
+            "text": document.text,
+            "url": document.url,
+            "metadata": metadata,
+        }
+
+    def _document_listing_payload(self, document: CanonicalDocument) -> JSONDict:
+        return {
+            "id": document.id,
+            "title": document.title,
+            "url": document.url,
+            "document_kind": document.document_kind,
+        }
+
+    def _document_listing_payload_from_result(self, result: SearchResult) -> JSONDict:
+        return {
+            "id": result.id,
+            "title": result.title,
+            "url": result.url,
+            "document_kind": result.document_kind,
+        }
+
+    def _search_result_payload(self, result: SearchResult) -> JSONDict:
+        return {
+            "id": result.id,
+            "title": result.title,
+            "url": result.url,
+            "document_kind": result.document_kind,
+            "origin_type": result.origin_type,
+            "origin_id": result.origin_id,
+            "notebook_id": result.notebook_id,
+        }
+
+    def _sync_run_payload(self, row: sqlite3.Row) -> JSONDict:
+        return {
+            "id": row["id"],
+            "notebook_id": row["notebook_id"],
+            "started_at": row["started_at"],
+            "completed_at": row["completed_at"],
+            "status": row["status"],
+            "source_count": row["source_count"],
+            "artifact_count": row["artifact_count"],
+            "document_count": row["document_count"],
+            "chunk_count": row["chunk_count"],
+            "error_count": row["error_count"],
+            "summary": row["summary"],
         }
 
 

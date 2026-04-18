@@ -1,4 +1,4 @@
-current scope: NotebookLM auth/session handling, raw connector abstraction, internal HTTP client, and Playwright fallback for auth/bootstrap/recovery
+current scope: NotebookLM auth/session handling, protected local session storage, default endpoint config loading/bootstrap, internal HTTP client, Playwright fallback for auth/bootstrap/recovery, and offline connector validation
 files owned: `src/auth/**`, `src/notebooklm_client/**`, `docs/status/terminal-2.md`
-current blocker: real NotebookLM internal endpoint values still need to be captured from an authenticated browser session and written to the local endpoint config file
-last meaningful change: added shared endpoint-config contract support plus a file-based loader so auth and connector flows can read one local NotebookLM endpoint config instead of repeated CLI path flags
+current blocker: endpoint discovery and the default endpoint template still need validation against a real authenticated NotebookLM session to confirm live endpoint correctness
+last meaningful change: replaced plaintext session writes with protected storage, auto-bootstrapped the default local endpoint config path, and added offline connector tests for error classification and failover

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+import json
 import sqlite3
 
 from src.store.models import (
@@ -264,11 +265,155 @@ class SQLiteStore:
                 ],
             )
 
+    def iter_documents(
+        self,
+        *,
+        notebook_id: str | None = None,
+        document_kind: str | None = None,
+    ) -> tuple[DocumentRecord, ...]:
+        query = [
+            """
+            SELECT
+                id,
+                notebook_id,
+                origin_type,
+                origin_id,
+                document_kind,
+                title,
+                text,
+                url,
+                content_sha256,
+                metadata_json
+            FROM documents
+            """
+        ]
+        parameters: list[str] = []
+
+        if notebook_id is not None or document_kind is not None:
+            clauses: list[str] = []
+            if notebook_id is not None:
+                clauses.append("notebook_id = ?")
+                parameters.append(notebook_id)
+            if document_kind is not None:
+                clauses.append("document_kind = ?")
+                parameters.append(document_kind)
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY notebook_id ASC, document_kind ASC, lower(title) ASC, id ASC")
+
+        connection = self._connect()
+        try:
+            rows = connection.execute("\n".join(query), parameters).fetchall()
+        finally:
+            connection.close()
+
+        return tuple(self._document_from_row(row) for row in rows)
+
+    def get_document(self, document_id: str) -> DocumentRecord | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    notebook_id,
+                    origin_type,
+                    origin_id,
+                    document_kind,
+                    title,
+                    text,
+                    url,
+                    content_sha256,
+                    metadata_json
+                FROM documents
+                WHERE id = ?
+                """,
+                (document_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        if row is None:
+            return None
+        return self._document_from_row(row)
+
+    def iter_chunks(
+        self,
+        *,
+        notebook_id: str | None = None,
+        document_id: str | None = None,
+    ) -> tuple[ChunkRecord, ...]:
+        query = [
+            """
+            SELECT
+                id,
+                document_id,
+                notebook_id,
+                chunk_index,
+                text,
+                char_start,
+                char_end,
+                token_count_estimate,
+                content_sha256,
+                metadata_json
+            FROM chunks
+            """
+        ]
+        parameters: list[str] = []
+
+        if notebook_id is not None or document_id is not None:
+            clauses: list[str] = []
+            if notebook_id is not None:
+                clauses.append("notebook_id = ?")
+                parameters.append(notebook_id)
+            if document_id is not None:
+                clauses.append("document_id = ?")
+                parameters.append(document_id)
+            query.append("WHERE " + " AND ".join(clauses))
+
+        query.append("ORDER BY document_id ASC, chunk_index ASC, id ASC")
+
+        connection = self._connect()
+        try:
+            rows = connection.execute("\n".join(query), parameters).fetchall()
+        finally:
+            connection.close()
+
+        return tuple(self._chunk_from_row(row) for row in rows)
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._paths.db_path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
+
+    def _document_from_row(self, row: sqlite3.Row) -> DocumentRecord:
+        return DocumentRecord(
+            id=row["id"],
+            notebook_id=row["notebook_id"],
+            origin_type=row["origin_type"],
+            origin_id=row["origin_id"],
+            document_kind=row["document_kind"],
+            title=row["title"],
+            text=row["text"],
+            url=row["url"],
+            content_sha256=row["content_sha256"],
+            metadata=json.loads(row["metadata_json"]),
+        )
+
+    def _chunk_from_row(self, row: sqlite3.Row) -> ChunkRecord:
+        return ChunkRecord(
+            id=row["id"],
+            document_id=row["document_id"],
+            notebook_id=row["notebook_id"],
+            chunk_index=row["chunk_index"],
+            text=row["text"],
+            char_start=row["char_start"],
+            char_end=row["char_end"],
+            token_count_estimate=row["token_count_estimate"],
+            content_sha256=row["content_sha256"],
+            metadata=json.loads(row["metadata_json"]),
+        )
 
     def _upsert_notebook(self, connection: sqlite3.Connection, notebook: NotebookRecord) -> None:
         connection.execute(

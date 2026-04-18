@@ -4,6 +4,7 @@ from .backend import (
     NotFoundError,
     NullResearchBackend,
     ResearchBackend,
+    SQLiteResearchBackend,
     build_demo_backend,
 )
 from .http import ServerConfig, serve_streamable_http
@@ -17,6 +18,7 @@ __all__ = [
     "NullResearchBackend",
     "ResearchBackend",
     "ServerConfig",
+    "SQLiteResearchBackend",
     "build_demo_backend",
     "serve_streamable_http",
 ]

@@ -9,17 +9,19 @@ from src.notebooklm_client.connector import FailoverNotebookLMConnector
 from src.notebooklm_client.endpoints import (
     EndpointDefinition,
     NotebookLMEndpointSet,
+    ensure_endpoint_config,
     load_endpoint_config,
 )
 from src.notebooklm_client.http_connector import NotebookLMHttpConnector
 from src.notebooklm_client.playwright_connector import PlaywrightNotebookLMConnector
 
+from .endpoint_capture import NotebookLMEndpointDiscoverer
 from .service import NotebookLMAuthManager
 
 
 def _build_endpoints(args: argparse.Namespace) -> tuple[str, NotebookLMEndpointSet] | None:
     config_path = Path(args.endpoint_config) if args.endpoint_config else None
-    loaded_config = load_endpoint_config(config_path)
+    loaded_config = ensure_endpoint_config(config_path) if config_path is None else load_endpoint_config(config_path)
     if loaded_config is not None:
         return loaded_config.base_url, loaded_config.endpoints
 
@@ -88,6 +90,15 @@ def main() -> int:
     doctor_parser.add_argument("--playwright-fallback", action="store_true")
     doctor_parser.add_argument("--auto-recover-auth", action="store_true")
 
+    discover_parser = subparsers.add_parser(
+        "discover-endpoints",
+        help="Capture NotebookLM internal endpoints from an authenticated browser session",
+    )
+    discover_parser.add_argument("--output-path")
+    discover_parser.add_argument("--timeout-seconds", type=int, default=45)
+    discover_parser.add_argument("--headless", action="store_true")
+    discover_parser.add_argument("--bootstrap-login", action="store_true")
+
     args = parser.parse_args()
     auth_manager = NotebookLMAuthManager()
 
@@ -101,6 +112,17 @@ def main() -> int:
 
     if args.command == "validate":
         _print_json(auth_manager.validate_session().__dict__)
+        return 0
+
+    if args.command == "discover-endpoints":
+        discoverer = NotebookLMEndpointDiscoverer(auth_manager)
+        report = discoverer.discover(
+            output_path=Path(args.output_path) if args.output_path else None,
+            timeout_seconds=args.timeout_seconds,
+            headless=args.headless,
+            bootstrap_login=args.bootstrap_login,
+        )
+        _print_json(report.to_dict())
         return 0
 
     connector = _build_probe_connector(args, auth_manager)

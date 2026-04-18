@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from index.chunking import ChunkingPolicy, build_chunks
-from index.embeddings import EmbeddingBackend, HashingEmbeddingBackend, SemanticChunkIndex
-from index.lexical import SqliteFtsLexicalIndex
+from src.index.chunking import ChunkingPolicy, build_chunks
+from src.index.embeddings import EmbeddingBackend, HashingEmbeddingBackend, SemanticChunkIndex
+from src.index.lexical import SqliteFtsLexicalIndex
 
 from .models import CanonicalChunk, CanonicalDocument, SearchResult
 from .repository import CanonicalDocumentRepository

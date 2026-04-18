@@ -8,6 +8,7 @@ These files are shared-critical:
 
 - `AGENTS.md`
 - `CODEX.md`
+- `README.md`
 - top-level dependency manifests
 - lockfiles
 - `.gitignore`
@@ -115,6 +116,7 @@ Responsibilities:
 - If a required change crosses ownership boundaries, ask the user and stop.
 - Use `docs/status/terminal-<n>.md` for factual status updates, not design decisions.
 - Shared design decisions belong in `docs/contracts/**`.
+- Runtime-generated state under `.local/`, Python cache directories, compiled bytecode, browser profiles, session files, logs, and local SQLite artifacts must not be committed.
 
 ## Readiness Gate
 

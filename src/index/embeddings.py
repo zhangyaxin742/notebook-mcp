@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Protocol
 
-from retrieval.models import CanonicalChunk
+from src.retrieval.models import CanonicalChunk
 
 
 class EmbeddingBackend(Protocol):
@@ -118,4 +118,3 @@ def _tokenize(text: str) -> list[str]:
 
 def _cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     return sum(left_value * right_value for left_value, right_value in zip(left, right, strict=True))
-

@@ -4,7 +4,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-from retrieval.models import CanonicalChunk, CanonicalDocument
+from src.retrieval.models import CanonicalChunk, CanonicalDocument
 
 
 @dataclass(frozen=True)
@@ -189,4 +189,3 @@ def _make_chunk(
             "origin_id": document.origin_id,
         },
     )
-

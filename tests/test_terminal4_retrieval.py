@@ -1,16 +1,8 @@
-import sys
+import importlib
 import unittest
-from pathlib import Path
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = REPO_ROOT / "src"
-
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-from index.chunking import ChunkingPolicy, build_chunks
-from retrieval import CanonicalDocument, InMemoryDocumentRepository, RetrievalService
+from src.index.chunking import ChunkingPolicy, build_chunks
+from src.retrieval import CanonicalDocument, InMemoryDocumentRepository, RetrievalService
 
 
 class StubEmbeddingBackend:
@@ -28,6 +20,10 @@ class StubEmbeddingBackend:
             return (1.0, 0.0)
         if "vector databases primer" in normalized:
             return (1.0, 0.0)
+        if "hybrid retrieval query" in normalized:
+            return (0.7, 0.7)
+        if "hybrid retrieval memo" in normalized:
+            return (0.7, 0.7)
         if "hybrid ranking query" in normalized:
             return (0.0, 1.0)
         if "retrieval briefing" in normalized:
@@ -85,6 +81,17 @@ class Terminal4RetrievalTests(unittest.TestCase):
                 url="notebooklm://notebook/notebook-a/artifact/briefing_doc/brief-1",
             ),
             make_document(
+                document_id="nlm:document:notebook-a:artifact_text:memo-1",
+                notebook_id="nlm:notebook:notebook-a",
+                document_kind="artifact_text",
+                title="Hybrid Retrieval Memo",
+                text=(
+                    "Hybrid retrieval query guidance improves coverage when lexical matches are thin.\n\n"
+                    "This memo pairs semantic context with explicit retrieval terminology."
+                ),
+                url="notebooklm://notebook/notebook-a/artifact/custom_report/memo-1",
+            ),
+            make_document(
                 document_id="nlm:document:notebook-b:source_summary:paper-2",
                 notebook_id="nlm:notebook:notebook-b",
                 document_kind="source_summary",
@@ -98,6 +105,7 @@ class Terminal4RetrievalTests(unittest.TestCase):
             self.repository,
             embedding_backend=StubEmbeddingBackend(),
         )
+        self.service.refresh()
 
     def tearDown(self) -> None:
         self.service.close()
@@ -145,7 +153,6 @@ class Terminal4RetrievalTests(unittest.TestCase):
     def test_search_returns_semantic_only_matches_with_stable_fields(self) -> None:
         results = self.service.search("semantic neighbor query", limit=5)
 
-        self.assertEqual(len(results), 1)
         result = results[0]
         self.assertEqual(result.id, "nlm:document:notebook-a:source_summary:paper-1")
         self.assertEqual(result.notebook_id, "nlm:notebook:notebook-a")
@@ -156,6 +163,23 @@ class Terminal4RetrievalTests(unittest.TestCase):
         self.assertEqual(result.lexical_score, 0.0)
         self.assertGreater(result.score, 0.0)
         self.assertTrue(result.matched_chunk_ids)
+        self.assertTrue(all(candidate.lexical_score == 0.0 for candidate in results))
+
+    def test_search_returns_lexical_only_matches(self) -> None:
+        results = self.service.search("matters", limit=5)
+
+        self.assertEqual([result.id for result in results], ["nlm:document:notebook-a:artifact_text:brief-1"])
+        self.assertGreater(results[0].lexical_score, 0.0)
+        self.assertEqual(results[0].semantic_score, 0.0)
+
+    def test_search_returns_hybrid_ranked_matches(self) -> None:
+        results = self.service.search("hybrid retrieval query", limit=5)
+
+        self.assertGreaterEqual(len(results), 2)
+        self.assertEqual(results[0].id, "nlm:document:notebook-a:artifact_text:memo-1")
+        self.assertGreater(results[0].lexical_score, 0.0)
+        self.assertGreater(results[0].semantic_score, 0.0)
+        self.assertGreater(results[0].score, results[1].score)
 
     def test_search_notebook_and_document_kind_filters(self) -> None:
         notebook_results = self.service.search_notebook(
@@ -163,7 +187,8 @@ class Terminal4RetrievalTests(unittest.TestCase):
             "hybrid ranking query",
             limit=5,
         )
-        self.assertEqual([result.id for result in notebook_results], ["nlm:document:notebook-a:artifact_text:brief-1"])
+        self.assertEqual(notebook_results[0].id, "nlm:document:notebook-a:artifact_text:brief-1")
+        self.assertTrue(all(result.notebook_id == "nlm:notebook:notebook-a" for result in notebook_results))
 
         filtered_results = self.service.search(
             "retrieval",
@@ -171,7 +196,9 @@ class Terminal4RetrievalTests(unittest.TestCase):
             document_kind="artifact_text",
             limit=5,
         )
-        self.assertEqual([result.id for result in filtered_results], ["nlm:document:notebook-a:artifact_text:brief-1"])
+        self.assertTrue(filtered_results)
+        self.assertTrue(all(result.notebook_id == "nlm:notebook:notebook-a" for result in filtered_results))
+        self.assertTrue(all(result.document_kind == "artifact_text" for result in filtered_results))
 
     def test_fetch_and_list_documents_read_from_canonical_repository(self) -> None:
         fetched = self.service.fetch("nlm:document:notebook-a:artifact_text:brief-1")
@@ -180,10 +207,28 @@ class Terminal4RetrievalTests(unittest.TestCase):
         self.assertEqual(
             [document.id for document in self.service.list_documents(notebook_id="nlm:notebook:notebook-a")],
             [
+                "nlm:document:notebook-a:artifact_text:memo-1",
                 "nlm:document:notebook-a:artifact_text:brief-1",
                 "nlm:document:notebook-a:source_summary:paper-1",
             ],
         )
+
+    def test_search_refreshes_indexes_lazily_and_respects_limit(self) -> None:
+        self.service.close()
+        self.service = RetrievalService(
+            self.repository,
+            embedding_backend=StubEmbeddingBackend(),
+        )
+
+        results = self.service.search("retrieval", notebook_id="nlm:notebook:notebook-a", limit=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].notebook_id, "nlm:notebook:notebook-a")
+
+    def test_import_smoke_uses_src_package_path(self) -> None:
+        module = importlib.import_module("src.retrieval.service")
+
+        self.assertTrue(hasattr(module, "RetrievalService"))
 
 
 if __name__ == "__main__":

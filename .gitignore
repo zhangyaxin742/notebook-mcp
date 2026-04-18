@@ -38,3 +38,18 @@ next-env.d.ts
 # no commit
 agent.md
 CODEX.md
+
+# python runtime artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# local runtime state
+.local/
+*.sqlite
+*.sqlite3
+*.db
+*.log

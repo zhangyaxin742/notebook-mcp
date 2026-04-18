@@ -58,10 +58,72 @@ class LoadedEndpointConfig:
     base_url: str
     endpoints: NotebookLMEndpointSet
     source_path: Path
+    source_kind: str = "file"
 
 
 def default_endpoint_config_path() -> Path:
     return resolve_runtime_paths().auth_dir / "notebooklm_endpoints.json"
+
+
+def default_endpoint_config() -> LoadedEndpointConfig:
+    return LoadedEndpointConfig(
+        base_url="https://notebooklm.google.com",
+        endpoints=NotebookLMEndpointSet(
+            list_notebooks=EndpointDefinition(
+                path="api/notebooks",
+                method="GET",
+                root_keys=("notebooks",),
+            ),
+            get_notebook=EndpointDefinition(
+                path="api/notebooks/{notebook_id}",
+                method="GET",
+            ),
+            list_sources=EndpointDefinition(
+                path="api/notebooks/{notebook_id}/sources",
+                method="GET",
+                root_keys=("sources",),
+            ),
+            list_artifacts=EndpointDefinition(
+                path="api/notebooks/{notebook_id}/artifacts",
+                method="GET",
+                root_keys=("artifacts",),
+            ),
+            get_artifact=EndpointDefinition(
+                path="api/notebooks/{notebook_id}/artifacts/{artifact_id}",
+                method="GET",
+            ),
+        ),
+        source_path=default_endpoint_config_path(),
+        source_kind="default_template",
+    )
+
+
+def ensure_endpoint_config(path: Path | None = None) -> LoadedEndpointConfig:
+    config_path = path or default_endpoint_config_path()
+    loaded = load_endpoint_config(config_path)
+    if loaded is not None:
+        return loaded
+
+    default_config = default_endpoint_config()
+    write_endpoint_config(
+        base_url=default_config.base_url,
+        endpoints=default_config.endpoints,
+        path=config_path,
+        metadata={
+            "source_kind": "default_template",
+            "warning": (
+                "This file contains the repository's default NotebookLM endpoint guesses. "
+                "If doctor/probe reports endpoint drift, run endpoint discovery to capture "
+                "live authenticated endpoints for your current NotebookLM session."
+            ),
+        },
+    )
+    return LoadedEndpointConfig(
+        base_url=default_config.base_url,
+        endpoints=default_config.endpoints,
+        source_path=config_path,
+        source_kind="default_template",
+    )
 
 
 def _endpoint_from_dict(payload: dict[str, Any]) -> EndpointDefinition:
@@ -128,4 +190,57 @@ def load_endpoint_config(path: Path | None = None) -> LoadedEndpointConfig | Non
             get_artifact=optional_endpoint("get_artifact"),
         ),
         source_path=config_path,
+        source_kind=str(payload.get("source_kind", "file")),
     )
+
+
+def endpoint_to_dict(endpoint: EndpointDefinition) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "path": endpoint.path,
+        "method": endpoint.method,
+    }
+    if endpoint.query:
+        payload["query"] = dict(endpoint.query)
+    if endpoint.body is not None:
+        payload["body"] = dict(endpoint.body)
+    if endpoint.root_keys:
+        payload["root_keys"] = list(endpoint.root_keys)
+    if endpoint.timeout_seconds != 30.0:
+        payload["timeout_seconds"] = endpoint.timeout_seconds
+    return payload
+
+
+def write_endpoint_config(
+    *,
+    base_url: str,
+    endpoints: NotebookLMEndpointSet,
+    path: Path | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
+    target_path = path or default_endpoint_config_path()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload: dict[str, Any] = {
+        "base_url": base_url,
+        "endpoints": {
+            "list_notebooks": endpoint_to_dict(endpoints.list_notebooks),
+        },
+    }
+    if metadata:
+        payload.update(metadata)
+
+    optional_endpoints = {
+        "get_notebook": endpoints.get_notebook,
+        "list_sources": endpoints.list_sources,
+        "list_artifacts": endpoints.list_artifacts,
+        "get_artifact": endpoints.get_artifact,
+    }
+    for name, endpoint in optional_endpoints.items():
+        if endpoint is not None:
+            payload["endpoints"][name] = endpoint_to_dict(endpoint)
+
+    with target_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+    return target_path

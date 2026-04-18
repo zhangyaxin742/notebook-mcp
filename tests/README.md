@@ -14,12 +14,16 @@ What it covers today:
 - contract-aligned example record shape checks
 - secret scrubbing checks for committed fixtures
 - documentation coverage for setup and runbook requirements
+- sync runtime behavior, including idempotence and failed-run recording
+- retrieval runtime behavior, including chunking and hybrid search
+- MCP protocol and HTTP transport smoke behavior
+- import smoke checks across the main package surfaces
 
 What it does not cover yet:
 
 - live NotebookLM authentication
-- end-to-end sync execution
-- indexing behavior
-- MCP server transport behavior
+- real NotebookLM network integration against a live private account
+- browser-driven Playwright login execution
+- production deployment monitoring, backup, and rollback procedures
 
 Those areas depend on implementation owned by other terminals and should be added once those paths exist.
